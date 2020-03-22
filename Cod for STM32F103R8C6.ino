@@ -30,7 +30,7 @@ long duration, cm;
 DFRobot_QMC5883 compass;
 float xv, yv, zv;
 float heading;
-float out_az;//азимут
+float az_ship;//азимут
 float headingDegrees;
 float scaler;
 boolean scaler_flag = false;
@@ -57,10 +57,10 @@ int in2;//
 int in3;//выталкиватель
 int in4;//
 bool garb;//внутренняя команда на выгрузку
-bool down_sw1;//концевик задний пресс
-bool up_sw1;//концевик передний пресс
-bool down_sw2;//концевик задний выталкиватель
-bool up_sw2;//концевик передний выталкиватель
+int down_sw1; //концевик задний пресс
+int up_sw2;//концевик передний выталкиватель
+int up_sw1;//концевик передний пресс
+int down_sw2;//концевик задний выталкиватель
 bool f_tap1;//флаг нажатия пресс
 bool f_tap2;//флаг нажатия выталкиватель
 bool f_open; //флаг открытия дверц
@@ -93,6 +93,7 @@ int out_lev_garb;//наполненность мусором
 int out_bat;//напряжение
 int out_dist;//растояние впереди
 int out_enab;
+int out_az;
 //...................................................................переменные ручного управления
 int in_arr_up;//стрелка вверх
 int in_arr_down;//стрелка ввниз
@@ -101,6 +102,8 @@ int in_arr_left;//стрелка влево
 //...................................................................переменные расчёта движения
 float in_lat;//широта
 float in_lon;//долгота
+int in_val_up=1700;
+int in_val_down=1300;
 float ang_tr;//угол треугольника
 float az_mot;//азимут направления
 //...................................................................переменные управления светом
@@ -108,6 +111,7 @@ int in_light;//включить свет или нет
 
 //...................................................................переменные управления работы
 int in_work;//работать или нет
+int in_garb_cb;
 //...................................................................конец переменных
 //................................................функция преобразований для работы компаса
 void transformation(float uncalibrated_values[3])    
@@ -155,8 +159,10 @@ void setup() {
   GPS.begin(9600);// gps
   //Serial3.begin(9600);// gps
   //................................................................инициализация двигателей
-  motor_left.attach(PB4, min_position, max_position);    //Инициальзация левого мотора (порт, начальная позиция, максимальная позиция)       !!!
-  motor_right.attach(PB10, min_position, max_position);  //Инициальзация правого мотора (порт, начальная позиция, максимальная позиция)      !!!
+  motor_left.attach(PB10, min_position, max_position);    //Инициальзация левого мотора (порт, начальная позиция, максимальная позиция)       !!!
+  delay(400);
+  motor_right.attach(PB4, min_position, max_position);  //Инициальзация правого мотора (порт, начальная позиция, максимальная позиция)      !!!
+  delay(400);
   //................................................................инициализация дальномера
   pinMode(PA15, OUTPUT);
   pinMode(PB3, INPUT);
@@ -166,13 +172,17 @@ void setup() {
   pinMode(PA1, OUTPUT);//белый свет
   pinMode(PA6, OUTPUT);//красный свет
   //................................................................инициализация концевиков
-  pinMode(PA2, INPUT);//задний выталкиватель
-  pinMode(PA3, INPUT);//передний выталкиватель
-  pinMode(PB1, INPUT);//задний пресс
-  pinMode(PB0, INPUT);//передний пресс
+  pinMode(PB0, INPUT_PULLUP);//задний выталкиватель
+  pinMode(PA3, INPUT_PULLUP);//передний выталкиватель
+  pinMode(PB1, INPUT_PULLUP);//задний пресс
+  pinMode(PA2, INPUT_PULLUP);//передний пресс
   //................................................................инициализация сервоприводов
-  servo_right.attach(PB11, 0,180);
-  servo_right.attach(PB5, 0,180);
+  servo_left.attach(PB11, 0, 180);
+  servo_left.write(60);
+  servo_right.attach(PB5, 0, 180);
+  servo_right.write(60);
+
+
   //................................................................инициализация пресса
   pinMode(PB15, OUTPUT);
   pinMode(PB14, OUTPUT);
@@ -189,6 +199,10 @@ void setup() {
     compass.setMeasurementMode(QMC5883_CONTINOUS);                              //
     compass.setDataRate(QMC5883_DATARATE_50HZ);                                 //
     compass.setSamples(QMC5883_SAMPLES_8);
+  servo_right.attach(PB5, 0, 180);
+  delay(200);
+  servo_right.write(90);
+  delay(200);
 }
 
 void loop() {
@@ -213,6 +227,9 @@ Y6=Var.substring(Var.indexOf("YG")+2,Var.indexOf("GY"));
 Y7=Var.substring(Var.indexOf("YH")+2,Var.indexOf("HY"));
 Y8=Var.substring(Var.indexOf("YI")+2,Var.indexOf("IY")); 
 Y9=Var.substring(Var.indexOf("YJ")+2,Var.indexOf("JY")); 
+Y10=Var.substring(Var.indexOf("YK")+2,Var.indexOf("KY")); 
+Y11=Var.substring(Var.indexOf("YL")+2,Var.indexOf("JL")); 
+Y12=Var.substring(Var.indexOf("YL")+2,Var.indexOf("JL")); 
 //меняю
 in_lat=(Y0.toInt());
 in_lon=(Y1.toInt());
@@ -224,6 +241,8 @@ in_arr_left=(Y6.toInt());
 in_light=(Y7.toInt());
 in_garb=(Y8.toInt());
 in_work=(Y9.toInt());
+in_garb_cb=(Y10.toInt());
+in_val_up=(Y11.toInt());
 if(in_mode==3){
   f_sos_time=1;
 }
@@ -232,7 +251,7 @@ if(in_mode==3){
 if(in_light==1){
   digitalWrite(PA1, 1);//белый свет
   digitalWrite(PA6, 1);//красный свет
-} else if(analogRead(PA5)>=200){
+} else if(analogRead(PA5)<4){
   digitalWrite(PA1, 1);//белый свет
   digitalWrite(PA6, 1);//красный свет
 } else{
@@ -252,40 +271,49 @@ if(millis()-timer>60000){
 //....................................................вольтметр
 out_bat=analogRead(PA4)*0.013*100;
 //....................................................работа дальномера
-  digitalWrite(PB5, LOW);
+  digitalWrite(PA15, LOW);
   delayMicroseconds(5);
-  digitalWrite(PB5, HIGH);
+  digitalWrite(PA15, HIGH);
   // Выставив высокий уровень сигнала, ждем около 10 микросекунд. В этот момент датчик будет посылать сигналы с частотой 40 КГц.
   delayMicroseconds(10);
-  digitalWrite(PB5, LOW);
-  duration = pulseIn(PB4, HIGH);
+  digitalWrite(PA15, LOW);
+  duration = pulseIn(PB3, HIGH);
   out_dist = (duration/2) / 29.1;
+//....................................................получение состояния концевиков
+up_sw1=digitalRead(PA2);
+down_sw1=digitalRead(PB1);
+up_sw2=digitalRead(PA3);
+down_sw2=digitalRead(PB0);
 //....................................................выгрузка мусора 
     if(in_garb==1 || garb==1){
       servo_left.write(90);
       servo_right.write(90);
-      if(up_sw2==0 && f_tap2==0){
-        analogWrite(PA8,255);
-        digitalWrite(PB13,1);
-        digitalWrite(PB12,0);
+      if(up_sw2==1 && f_tap2==0){
+        analogWrite(PA8,200);
+        digitalWrite(PB15,1);
+        digitalWrite(PB14,0);
       }
-      if(up_sw2==1){
+      if(up_sw2==0){
         f_tap2=1;
-        analogWrite(PA8,255);
-        digitalWrite(PB13,0);
-        digitalWrite(PB12,1);
+        analogWrite(PA8,200);
+        digitalWrite(PB15,0);
+        digitalWrite(PB14,1);
       } 
       if(down_sw2==1 && f_tap2==1){
         garb==0;
-        analogWrite(PA8,255);
-        digitalWrite(PB13,0);
-        digitalWrite(PB12,0);
+        analogWrite(PA8,200);
+        digitalWrite(PB15,0);
+        digitalWrite(PB14,0);
       }
     }
 //...............................................................забор мусора
- if(digitalRead(PA12)==1){
+ //out_garb=digitalRead(PA12);
+ out_garb=in_garb_cb;
+ if(out_garb==1){
   f_open=1;
+  delay(100);
   servo_left.write(110);
+  delay(100);
   servo_right.write(110);
   garb_time=millis();
   f_servo_time=1;
@@ -304,29 +332,32 @@ out_bat=analogRead(PA4)*0.013*100;
     }
    }
  }
-//...............................................................пресование
+//...............................................................пресcование
 if(f_pres==1){
-  if(down_sw1==0&&analogRead(PA7)<280&&f_pressed==false){
-     analogWrite(PA8,255);
-     digitalWrite(PB15,1);//прессуем
-     digitalWrite(PB13,0);
+  if(down_sw1==1&&analogRead(PA7)<993&&f_pressed==false){
+     digitalWrite(PB13,0);//прессуем
+     digitalWrite(PB12,1);
      if(f_pres_start==1){
      pres_start=millis();
      f_pres_start=0;
      }
   }
-  if((analogRead(PA7)>=280||down_sw1==1)&&f_pressed==false){
-   analogWrite(PA8,255);//возвращаемся
-   digitalWrite(PB15,0);
+  if((analogRead(PA7)>=993||down_sw1==0)&&f_pressed==false){
+   //возвращаемся
    digitalWrite(PB13,1);
+   digitalWrite(PB12,0);
    f_pressed=true;
    pres_stop=millis();
-   out_garb=100-(20/((pres_stop-pres_start)/1000)*100);
+   if(down_sw1==0){
+    out_lev_garb=50;
+   }else{
+   out_lev_garb=100-(20*((pres_stop-pres_start)/1000)/8);
+   }
    f_servo_time_press=1;
    }
-   if(up_sw1==1 && f_pressed==true){
-     digitalWrite(PB15,0);//открываем
-     digitalWrite(PB13,0);
+   if(up_sw1==0 && f_pressed==true){
+     digitalWrite(PB13,0);//открываем
+     digitalWrite(PB12,0);
      servo_right.write(59);
      if(f_servo_time_press==1){
      servo_time_press=millis();
@@ -356,7 +387,7 @@ w_gps.get_position(&out_lat, &out_lon);
 //Serial1.print(" Long: "); Serial1.print(out_gps_lon);
 //----------параметры-------------------
 out_spe=w_gps.f_speed_kmph();
-//out_az=w_gps.f_course();
+//az_ship=w_gps.f_course();
 //-----------------расчёт азимута направления
 float lat1=out_lat/1000000;//
 float lon1=out_lon/1000000;//
@@ -436,7 +467,7 @@ az_mot = 180+ang_tr;
         heading -= 2 * PI;
     }
     // Перевод в градусы
-    out_az = heading * 180/PI; 
+    az_ship = heading * 180/PI;
     
     
 //..............................................................................................................выбор режима работы
@@ -448,7 +479,7 @@ if(in_mode==1){
   if(in_work==1){
     digitalWrite(PA0, 0);
     if(enab==0){
-    if(out_az>az_mot){
+    if(az_ship>az_mot){
       //крутимся против часовой
       for (int i=100; i <= 150; i++){
       motor_right.write(i);
@@ -457,9 +488,9 @@ if(in_mode==1){
       //motor_right.write(150);
       f_reverseR=0;
       if(f_reverseL==0){
-       motor_left.write(50);
+       motor_left.write(800);
        delay(50);
-       motor_left.write(90);
+       motor_left.write(1500);
        delay(90);
        f_reverseL=1;
       }
@@ -469,7 +500,7 @@ if(in_mode==1){
       }
       //motor_left.write(50);
       
-    } else if(out_az<az_mot){
+    } else if(az_ship<az_mot){
       //крутимся по часовой
       for (int i=100; i <= 150; i++){
       motor_left.write(i);
@@ -478,9 +509,9 @@ if(in_mode==1){
       //motor_left.write(150);
       f_reverseL=0;
       if(f_reverseR==0){
-       motor_right.write(50);
+       motor_right.write(800);
        delay(50);
-       motor_right.write(90);
+       motor_right.write(1500);
        delay(90);
        f_reverseR=1;
       }
@@ -490,7 +521,7 @@ if(in_mode==1){
       }
       //motor_right.write(50);
     }
-    else if(out_az==az_mot){
+    else if(az_ship==az_mot){
       //двигаемся вперёд
       for (int i=100; i <= 150; i++){
       motor_left.write(i);
@@ -504,9 +535,9 @@ if(in_mode==1){
     }
     if(lat1==lat2 && lon1==lon2){
       enab=1;
-      motor_right.write(90);
+      motor_right.write(1500);
     f_reverseR=0;
-      motor_left.write(90);
+      motor_left.write(1500);
     f_reverseL=0;
     }
     }
@@ -517,58 +548,63 @@ if(in_mode==2 || hand==true){ //................................................
   out_war=0;
   digitalWrite(PA0, 0);
   if(in_arr_up==1){//вперёд
-    motor_left.write(150);
-      motor_right.write(150);
+    motor_left.write(in_val_up);
+    delay(50);
+    motor_right.write(in_val_up);
+    delay(20);
     f_reverseL=0;
     f_reverseR=0;
-    }
+  
   }else if(in_arr_down==1){//назад
     if(f_reverseL==0){
-       motor_left.write(50);
+       motor_left.write(800);
        delay(50);
-       motor_left.write(90);
+       motor_left.write(1500);
        delay(90);
        f_reverseL=1;
       }
-      motor_left.write(50);
+      motor_left.write(800);
     if(f_reverseR==0){
-       motor_right.write(50);
+       motor_right.write(800);
        delay(50);
-       motor_right.write(90);
+       motor_right.write(1500);
        delay(90);
        f_reverseR=1;
       }
-      motor_right.write(50);
+      motor_right.write(800);
     
   }else if(in_arr_right==1){//вправо
-    motor_right.write(150);
+    motor_left.write(in_val_up);
       f_reverseR=0;
       if(f_reverseL==0){
-       motor_left.write(50);
+       motor_right.write(800);
        delay(50);
-       motor_left.write(90);
+       motor_right.write(1500);
        delay(90);
        f_reverseL=1;
       }
-      motor_left.write(50);
+      motor_right.write(800);
   }else if(in_arr_left==1){//влево
-    motor_left.write(150);
+    motor_right.write(in_val_up);
       f_reverseL=0;
       if(f_reverseR==0){
-       motor_right.write(50);
+       motor_left.write(800);
        delay(50);
-       motor_right.write(90);
+       motor_left.write(1500);
        delay(90);
        f_reverseR=1;
       }
-      motor_right.write(50);
+      motor_left.write(800);
     
   }else{
-  motor_right.write(90);
-    f_reverseR=0;
-      motor_left.write(90);
+    motor_left.write(1500);
+    delay(50);
+    motor_right.write(1500);
+    delay(20);
     f_reverseL=0;
-  }  
+    f_reverseR=0;
+  }
+}  
 if(in_mode==3 || war==true){//........................................................режим возврата
   hand=false;
   if(f_sos_time==1){
@@ -582,7 +618,7 @@ if(in_mode==3 || war==true){//..................................................
     digitalWrite(PA0, 0);
     f_sos_time=1;
   }
-  if(out_az>az_mot){
+  if(az_ship>az_mot){
       //крутимся против часовой
       for (int i=100; i <= 150; i++){
       motor_right.write(i);
@@ -601,7 +637,7 @@ if(in_mode==3 || war==true){//..................................................
       delay(10);
       }
 
-    } else if(out_az<az_mot){
+    } else if(az_ship<az_mot){
       //крутимся по часовой
       for (int i=100; i <= 150; i++){
       motor_left.write(i);
@@ -621,7 +657,7 @@ if(in_mode==3 || war==true){//..................................................
       delay(10);
       }
     }
-    else if(out_az==az_mot){
+    else if(az_ship==az_mot){
       //двигаемся вперёд
       for (int i=100; i <= 150; i++){
       motor_left.write(i);
@@ -640,8 +676,9 @@ if(in_mode==3 || war==true){//..................................................
     }
 }
 //..........................................................................отправка данных
-if(millis()-last_time1>400){
+if(millis()-last_time1>500){
 last_time1=millis();
+out_az=az_ship*100;
 String test = "";
 test += out_spe;//
        test += ";"; //
@@ -651,13 +688,13 @@ test += out_spe;//
        test += ";";//
        test += out_lat;//
        test += ";";//
-       test += out_tra1;//
+       test += up_sw1;//
        test += ";";
-       test += out_tra2;//
+       test += down_sw1;//
        test += ";";//
-       test += out_tra3;//
+       test += up_sw2;//
        test += ";";
-       test += out_tra4;//
+       test += down_sw2;//
        test += ";";//
        test += out_enab;//
        test += ";";//
@@ -671,8 +708,7 @@ test += out_spe;//
        test += ";";
        test += out_dist;//
        test += ";";
-       
-       //Serial1.print("Write: "); Serial1.println(test);
+
        Serial.println(test);
 }
 }
