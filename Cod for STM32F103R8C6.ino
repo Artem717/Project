@@ -178,9 +178,9 @@ void setup() {
   pinMode(PA2, INPUT_PULLUP);//передний пресс
   //................................................................инициализация сервоприводов
   servo_left.attach(PB11, 0, 180);
-  servo_left.write(60);
+  servo_left.write(30);
   servo_right.attach(PB5, 0, 180);
-  servo_right.write(60);
+  servo_right.write(150);
 
 
   //................................................................инициализация пресса
@@ -199,10 +199,7 @@ void setup() {
     compass.setMeasurementMode(QMC5883_CONTINOUS);                              //
     compass.setDataRate(QMC5883_DATARATE_50HZ);                                 //
     compass.setSamples(QMC5883_SAMPLES_8);
-  servo_right.attach(PB5, 0, 180);
-  delay(200);
-  servo_right.write(90);
-  delay(200);
+
 }
 
 void loop() {
