@@ -307,8 +307,11 @@ down_sw2=digitalRead(PB0);
       }
     }
 //...............................................................забор мусора
- //out_garb=digitalRead(PA12);
- out_garb=in_garb_cb;
+ if(digitalRead(PA12)==1){
+  out_garb=digitalRead(PA12);
+ }else{
+   out_garb=in_garb_cb;
+ }
  if(out_garb==1){
   f_open=1;
   delay(100);
